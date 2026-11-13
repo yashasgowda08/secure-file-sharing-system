@@ -1,0 +1,216 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  ADMIN
+  AUDITOR
+}
+
+enum ShareType {
+  PUBLIC_LINK
+  SPECIFIC_USER
+}
+
+enum SharePermission {
+  VIEW_ONLY
+  DOWNLOAD
+}
+
+model User {
+  id                   String                 @id @default(uuid())
+  email                String                 @unique
+  passwordHash         String
+  fullName             String
+  role                 Role                   @default(USER)
+  isVerified           Boolean                @default(true)
+  isMfaEnabled         Boolean                @default(false)
+  mfaSecret            String?
+  mfaBackupCodes       String?
+  storageUsed          BigInt                 @default(0)
+  storageLimit         BigInt                 @default(524288000)
+  failedLoginAttempts  Int                    @default(0)
+  lockoutUntil         DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  sessions             Session[]
+  files                File[]
+  folders              Folder[]
+  sharesCreated        FileShare[]            @relation("CreatedShares")
+  sharesReceived       FileShare[]            @relation("ReceivedShares")
+  downloadEvents       DownloadEvent[]
+  auditLogs            AuditLog[]
+  passwordResetTokens  PasswordResetToken[]
+  emailTokens          EmailVerificationToken[]
+
+  @@map("users")
+}
+
+model Session {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  userAgent  String?
+  ipAddress  String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("sessions")
+}
+
+model Folder {
+  id         String    @id @default(uuid())
+  name       String
+  parentId   String?
+  parent     Folder?   @relation("SubFolders", fields: [parentId], references: [id], onDelete: Cascade)
+  subfolders Folder[]  @relation("SubFolders")
+  ownerId    String
+  owner      User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  isDeleted  Boolean   @default(false)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  files      File[]
+
+  @@index([ownerId])
+  @@index([parentId])
+  @@map("folders")
+}
+
+model File {
+  id                 String          @id @default(uuid())
+  name               String
+  originalName       String
+  mimeType           String
+  size               BigInt
+  storageKey         String          @unique
+  isEncrypted        Boolean         @default(true)
+  encryptionIv       String?
+  encryptionAuthTag  String?
+  dekEncrypted       String?
+  isE2EE             Boolean         @default(false)
+  e2eeMetadata       String?
+  checksumSha256     String
+  folderId           String?
+  folder             Folder?         @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  ownerId            String
+  owner              User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  isQuarantined      Boolean         @default(false)
+  quarantineReason   String?
+  isDeleted          Boolean         @default(false)
+  deletedAt          DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  shares             FileShare[]
+  downloadEvents     DownloadEvent[]
+
+  @@index([ownerId])
+  @@index([folderId])
+  @@map("files")
+}
+
+model FileShare {
+  id                 String          @id @default(uuid())
+  fileId             String
+  file               File            @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  createdById        String
+  createdBy          User            @relation("CreatedShares", fields: [createdById], references: [id], onDelete: Cascade)
+  shareToken         String          @unique
+  shareType          ShareType       @default(PUBLIC_LINK)
+  sharedWithUserId   String?
+  sharedWithUser     User?           @relation("ReceivedShares", fields: [sharedWithUserId], references: [id], onDelete: SetNull)
+  sharedWithEmail    String?
+  passwordHash       String?
+  expiresAt          DateTime?
+  maxDownloads       Int?
+  currentDownloads   Int             @default(0)
+  permission         SharePermission @default(DOWNLOAD)
+  isRevoked          Boolean         @default(false)
+  revokedAt          DateTime?
+  createdAt          DateTime        @default(now())
+
+  downloadEvents     DownloadEvent[]
+
+  @@index([shareToken])
+  @@index([fileId])
+  @@index([createdById])
+  @@index([sharedWithUserId])
+  @@map("file_shares")
+}
+
+model DownloadEvent {
+  id            String     @id @default(uuid())
+  fileId        String
+  file          File       @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  shareId       String?
+  share         FileShare? @relation(fields: [shareId], references: [id], onDelete: SetNull)
+  userId        String?
+  user          User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  ipAddress     String
+  userAgent     String?
+  downloadedAt  DateTime   @default(now())
+
+  @@index([fileId])
+  @@index([shareId])
+  @@map("download_events")
+}
+
+model AuditLog {
+  id            String    @id @default(uuid())
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action        String
+  resourceType  String?
+  resourceId    String?
+  detailsJson   String?
+  ipAddress     String?
+  userAgent     String?
+  status        String    @default("SUCCESS")
+  createdAt     DateTime  @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("email_verification_tokens")
+}

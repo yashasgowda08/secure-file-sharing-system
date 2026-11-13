@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  # =========================================================================
+  # 1. PostgreSQL Database Service
+  # =========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: secure_vault_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vault_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-SuperSecretVaultDBPassword2026!}
+      POSTGRES_DB: ${POSTGRES_DB:-secure_file_vault}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vault_admin} -d ${POSTGRES_DB:-secure_file_vault}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vault_network
+
+  # =========================================================================
+  # 2. MinIO S3-Compatible Private Object Storage
+  # =========================================================================
+  minio:
+    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    container_name: secure_vault_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadminpassword2026!}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - vault_network
+
+  # =========================================================================
+  # 3. Bucket Initialization Helper (Ensures private S3 bucket exists)
+  # =========================================================================
+  minio-init:
+    image: minio/mc:latest
+    container_name: secure_vault_minio_init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set localminio http://minio:9000 minioadmin minioadminpassword2026!;
+      /usr/bin/mc mb --ignore-existing localminio/secure-vault-storage;
+      /usr/bin/mc anonymous set none localminio/secure-vault-storage;
+      exit 0;
+      "
+    networks:
+      - vault_network
+
+  # =========================================================================
+  # 4. Full Stack Application (API + Encrypted Storage Engine + Web SPA)
+  # =========================================================================
+  vault-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: secure_vault_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "${PORT:-5000}:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vault_admin}:${POSTGRES_PASSWORD:-SuperSecretVaultDBPassword2026!}@postgres:5432/${POSTGRES_DB:-secure_file_vault}?schema=public
+      SESSION_SECRET: ${SESSION_SECRET:-a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0}
+      MASTER_KEY_HEX: ${MASTER_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      HMAC_SECRET: ${HMAC_SECRET:-super_secret_hmac_url_signing_key_987654321_abcdef}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5000}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_PATH: /app/storage
+      S3_BUCKET: secure-vault-storage
+      S3_REGION: us-east-1
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadminpassword2026!
+      S3_FORCE_PATH_STYLE: "true"
+      MAX_FILE_SIZE_BYTES: 104857600
+    volumes:
+      - local_vault_storage:/app/storage
+    networks:
+      - vault_network
+
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+  local_vault_storage:
+    driver: local
+
+networks:
+  vault_network:
+    driver: bridge

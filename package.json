@@ -1,0 +1,46 @@
+{
+  "name": "secure-file-vault",
+  "version": "1.0.0",
+  "description": "Production-grade Secure File Sharing System with AES-256-GCM Envelope Encryption, Client-side E2EE, Argon2id, RFC 6238 MFA, and OWASP Top 10 Hardened Architecture",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "setup": "npm install && npm install --prefix backend && npm install --prefix frontend && npm run prisma:generate",
+    "build": "npm run build --prefix frontend && npm run build --prefix backend",
+    "build:frontend": "npm run build --prefix frontend",
+    "build:backend": "npm run build --prefix backend",
+    "start": "npm start --prefix backend",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "test": "npm test --prefix backend",
+    "prisma:generate": "npm run prisma:generate --prefix backend",
+    "prisma:migrate": "npm run prisma:migrate --prefix backend",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "keywords": [
+    "secure-file-sharing",
+    "encryption",
+    "aes-256-gcm",
+    "argon2id",
+    "mfa",
+    "totp",
+    "e2ee",
+    "zero-trust",
+    "cybersecurity",
+    "react",
+    "typescript",
+    "express",
+    "prisma"
+  ],
+  "author": "Antigravity Engineering",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
