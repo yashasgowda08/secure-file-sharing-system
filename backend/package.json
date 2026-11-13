@@ -7,8 +7,8 @@
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "test": "tsx --test src/__tests__/crypto.test.ts src/__tests__/security.test.ts src/__tests__/api.test.ts",
-    "prisma:push": "prisma db push",
-    "prisma:generate": "prisma generate"
+    "prisma:push": "node -e \"if (!fs.existsSync('.env')) fs.copyFileSync('.env.example', '.env')\" && prisma db push",
+    "prisma:generate": "node -e \"if (!fs.existsSync('.env')) fs.copyFileSync('.env.example', '.env')\" && prisma generate"
   },
   "keywords": [],
   "author": "",
